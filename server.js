@@ -9,17 +9,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// =====================
-// FETCH SHOPIFY PRODUCTS
-// =====================
+/* =====================
+   FETCH SHOPIFY PRODUCTS
+===================== */
 async function getProducts() {
   try {
     const query = `
     {
-      products(first: 10) {
+      products(first: 20) {
         edges {
           node {
             title
+            description
             handle
             images(first: 1) {
               edges {
@@ -31,7 +32,6 @@ async function getProducts() {
             variants(first: 1) {
               edges {
                 node {
-                  id
                   price {
                     amount
                   }
@@ -49,8 +49,7 @@ async function getProducts() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Shopify-Storefront-Access-Token":
-            process.env.SHOPIFY_TOKEN,
+          "X-Shopify-Storefront-Access-Token": process.env.SHOPIFY_TOKEN,
         },
         body: JSON.stringify({ query }),
       }
@@ -71,13 +70,16 @@ async function getProducts() {
   }
 }
 
+/* =====================
+   HEALTH CHECK
+===================== */
 app.get("/", (req, res) => {
   res.json({ status: "Backend is running" });
 });
 
-// =====================
-// CHAT ROUTE
-// =====================
+/* =====================
+   CHAT ROUTE
+===================== */
 app.post("/chat", async (req, res) => {
   try {
     const { message } = req.body;
@@ -89,31 +91,22 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    // =====================
-    // GET PRODUCTS
-    // =====================
+    // Get store products
     const products = await getProducts();
 
-    const matchedProducts = products.filter((p) =>
-      p.title.toLowerCase().includes(message.toLowerCase())
-    );
+    // Convert products into AI-readable format
+    const productText = products
+      .map((p) => {
+        return `
+Product: ${p.title}
+Description: ${p.description || "No description"}
+Price: ${p.variants.edges[0]?.node?.price?.amount || "N/A"}
+Link: /products/${p.handle}
+`;
+      })
+      .join("\n---\n");
 
-    let productText = "No matching products found.";
-
-    if (matchedProducts.length > 0) {
-      productText = matchedProducts
-        .map(
-          (p) =>
-            `${p.title} - ${
-              p.variants.edges[0]?.node?.price?.amount || "N/A"
-            }`
-        )
-        .join("\n");
-    }
-
-    // =====================
-    // GROQ API CALL
-    // =====================
+    // Call Groq AI
     const groqResponse = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
       {
@@ -127,12 +120,24 @@ app.post("/chat", async (req, res) => {
           messages: [
             {
               role: "system",
-              content:
-                "You are a helpful Shopify AI assistant. Recommend products clearly and simply.",
+              content: `
+You are a Shopify AI shopping assistant.
+
+Rules:
+- Use ONLY the provided store products
+- Recommend best matching products
+- Be short and clear
+- If nothing matches, say "No suitable product found"
+              `,
             },
             {
               role: "user",
-              content: `User message: ${message}\n\nProducts:\n${productText}`,
+              content: `
+Customer message: ${message}
+
+Store Products:
+${productText}
+              `,
             },
           ],
           temperature: 0.7,
@@ -142,16 +147,12 @@ app.post("/chat", async (req, res) => {
 
     const aiData = await groqResponse.json();
 
-    // =====================
-    // ERROR HANDLING (IMPORTANT FIX)
-    // =====================
     if (!groqResponse.ok) {
       console.log("Groq Error:", aiData);
 
       return res.json({
-        reply:
-          "AI service error. Please check API key or try again later.",
-        products: matchedProducts,
+        reply: "AI service error. Please check API key.",
+        products: [],
       });
     }
 
@@ -161,7 +162,7 @@ app.post("/chat", async (req, res) => {
 
     return res.json({
       reply,
-      products: matchedProducts,
+      products,
     });
 
   } catch (error) {
@@ -174,7 +175,7 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// =====================
-// START SERVER
-// =====================
+/* =====================
+   EXPORT FOR VERCEL
+===================== */
 export default app;
