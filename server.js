@@ -123,6 +123,10 @@ Link: /products/${p.handle}
       })
       .join("\n---\n");
 
+
+      console.log("User message:", message);
+console.log("Products count:", products.length);
+
     // GROQ AI CALL
     const groqResponse = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
@@ -162,17 +166,27 @@ ${productText}
       }
     );
 
-    const aiData = await groqResponse.json();
+ let aiData;
 
-    if (!groqResponse.ok) {
-      console.log("Groq Error:", aiData);
+try {
+  aiData = await groqResponse.json();
+} catch (err) {
+  console.log("Groq JSON Parse Error:", err);
 
-      return res.json({
-        reply: "AI service error. Please check API key.",
-        products: [],
-      });
-    }
+  return res.json({
+    reply: "AI response error (invalid format).",
+    products: [],
+  });
+}
 
+if (!groqResponse.ok) {
+  console.log("Groq Error Full:", aiData);
+
+  return res.json({
+    reply: aiData?.error?.message || "AI service error from Groq.",
+    products: [],
+  });
+}
     const reply =
       aiData?.choices?.[0]?.message?.content ||
       "Sorry, I couldn't generate a response.";
