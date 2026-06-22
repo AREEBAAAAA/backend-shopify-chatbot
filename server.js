@@ -5,6 +5,11 @@ dotenv.config();
 
 const app = express();
 
+app.get("/test-env", (req, res) => {
+  res.json({
+    groq: !!process.env.GROQ_API_KEY
+  });
+});
 /* =====================
    CORS FIX (Vercel SAFE)
 ===================== */
