@@ -1,23 +1,29 @@
 import express from "express";
-import cors from "cors";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 const app = express();
 
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
-  })
-);
+/* =====================
+   CORS FIX (Vercel SAFE)
+===================== */
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  next();
+});
 
 app.use(express.json());
 
 /* =====================
-   FETCH SHOPIFY PRODUCTS
+   SHOPIFY PRODUCTS
 ===================== */
 async function getProducts() {
   try {
@@ -98,10 +104,9 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    // Get store products
+    // Fetch products
     const products = await getProducts();
 
-    // Convert products into AI-readable format
     const productText = products
       .map((p) => {
         return `
@@ -113,7 +118,7 @@ Link: /products/${p.handle}
       })
       .join("\n---\n");
 
-    // Call Groq AI
+    // GROQ AI CALL
     const groqResponse = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
       {
@@ -128,19 +133,19 @@ Link: /products/${p.handle}
             {
               role: "system",
               content: `
-You are a Shopify AI shopping assistant.
+You are a Shopify AI assistant.
 
 Rules:
-- Use ONLY the provided store products
-- Recommend best matching products
-- Be short and clear
-- If nothing matches, say "No suitable product found"
+- Use ONLY the provided store products.
+- Recommend best matching products.
+- Be short and clear.
+- If no match, say "No suitable product found".
               `,
             },
             {
               role: "user",
               content: `
-Customer message: ${message}
+User message: ${message}
 
 Store Products:
 ${productText}
